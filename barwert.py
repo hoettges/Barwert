@@ -16,7 +16,6 @@ Copyright (C) 2026 by Jörg Höttges, joerg.hoettges@posteo.de
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
-import matplotlib.pyplot as plt
 import csv
 import sys
 import tkinter
