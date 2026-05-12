@@ -16,175 +16,192 @@ Copyright (C) 2026 by Jörg Höttges, joerg.hoettges@posteo.de
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
+import os
 import csv
 import sys
 import tkinter
 
 commandlis = ['Jahr', '1. Rate', 'Laufzeit', 'Vorlaufzeit', 'Abnahme pro Jahr', 
 'Zunahme pro Jahr', 'Zahltakt', 'Quadratische Steigerung', 'Steigerungsrate', 'Einmalzahlung',]
-commandbas = ['Gesamtlaufzeit', 'Inflation', ]
+commandbas = ['Gesamtlaufzeit', 'Abzinsung', ]
+
 
 class KVR():
-    def __init__(self):
-        self.barwerte = []       # Enthält Barwerte der Teilzahlungen
-        self.commands = None   # enthält nach Übernahme aus Clipboard Teilzahlungsliste als Titel, Commands und Werte
+    """Verwaltet Teilzahlungen und Barwerte der Teilkostenreihen"""
+    def __init__(self, fw):
+        """Aufgabebuffer und internen Clipboardbuffer initialisiseren"""
+        self.clipboard = ''     # enthält zuletzt übernommenes Clipboard
         self.separator = '\t'
 
     def reihe(self, comlis):
+        """Berechnung des Barwertes für eine Teilkostenreihe"""
         jahr = comlis.get('Jahr', 0)
-        rate0 = float(comlis.get('Einmalzahlung', 0))
-        rate0 = float(comlis.get('1. Rate', 0))
-        ngesamt = int(comlis.get('Gesamtlaufzeit', 1))
-        nlauf = int(comlis.get('Laufzeit', ngesamt))
-        nvor = int(comlis.get('Vorlaufzeit', 0))
-        d1 = float(comlis.get('Abnahme pro Jahr', 0))
-        d2 = float(comlis.get('Zunahme pro Jahr', 0))
-        takt = int(comlis.get('Zahltakt', 1))
+        rate0 = float(comlis.get('Einmalzahlung', '0').replace(',', '.'))
+        rate0 = float(comlis.get('1. Rate', '0').replace(',', '.'))
+        ngesamt = int(comlis.get('Gesamtlaufzeit', '1').replace(',', '.'))
+        nlauf = int(comlis.get('Laufzeit', str(ngesamt)).replace(',', '.'))
+        nvor = int(comlis.get('Vorlaufzeit', '0').replace(',', '.'))
+        d1 = float(comlis.get('Abnahme pro Jahr', '0').replace(',', '.'))
+        d2 = float(comlis.get('Zunahme pro Jahr', '0').replace(',', '.'))
+        takt = int(comlis.get('Zahltakt', '1').replace(',', '.'))
         deg1 = d2 - d1
-        deg2 = float(comlis.get('Quadratische Steigerung', 0))
+        deg2 = float(comlis.get('Quadratische Steigerung', '0').replace(',', '.'))
 
-        t = comlis.get('Inflation', 0)
-        if isinstance(t, str):
-            if "%" in t:
-                inflation = [float(t.replace('%', ''))/100.] * ngesamt
-            elif t.count(';') > 2:
-                # Es wurde eine Liste mit Prozentwerten (!) übergeben
-                inflation = [float(el.replace(',', '.')) for el in t.split(';')]
-                nfill = ngesamt - len(inflation)                            # fehlende Werte bis ngesamt
-                inflation.extend([0] * nfill)
-        else:
-            inflation = [float(t)/100.] * ngesamt
+        t = comlis.get('Abzinsung', '0').replace(',', '.')
+        if t.count(';') > 1:
+            # Es wurde eine Liste mit Prozentwerten übergeben
+            abzinsung = [float(el.replace('%', '').replace(',', '.'))/100. for el in t.split(';')]
+            nfill = ngesamt - len(abzinsung)                            # fehlende Werte bis ngesamt
+            abzinsung.extend([0.] * nfill)
+        elif "%" in t:
+            abzinsung = [float(t.replace('%', ''))/100.] * ngesamt
 
-        t = comlis.get('Steigerungsrate', 0)
-        if isinstance(t, str):
-            steigrate = float(t.replace('%', ''))/100.
-        else:
-            steigrate = float(t)/100.
+        t = comlis.get('Steigerungsrate', '0').replace(',', '.')
+        steigrate = float(t.replace('%', ''))/100.
 
-        kap = 0
-        fak = 1
-        abzins = 1
+        kap = 0.
+        fak = 1.
+        abzins = 1.
         for i in range(1, 1 + ngesamt):
-            abzins = (1 + inflation[i - 1]) ** i
+            abzins = (1. + abzinsung[i - 1]) ** i
             if nvor + nlauf >= i > nvor:
                 fak *= 1 + steigrate
                 if (i - nvor) % takt == 0:
                     teilbetrag = (rate0 + deg1 * (i - nvor) + deg2 * (i - nvor)**2) * fak / abzins
-                    print(f'{i=}: {teilbetrag=}, {fak=}, {abzins=}')
+                    # fw.write(f'{i=}: {teilbetrag=}, {fak=}, {abzins=}\n')
                     kap += (rate0 + deg1 * (i - nvor) + deg2 * (i - nvor)**2) * fak / abzins
         return kap
 
-    def calc(self, commands):
-        kap = 0
-        comlis = {}
-        kopf = True
-        zeile = ''
-        teilkap = []
-        for zeile in commands:
-            if zeile.count(self.separator) == 0 or zeile.strip() == self.separator or zeile.startswith('Allgemeine'):
-                continue
-            # if zeile.count(self.separator) < 2:
-                # zeile += zeil_
-                # if zeile.count(self.separator) < 2:
-                    # continue
-            # else:
-                # zeile = zeil_
-            print(f'{zeile=}')
-            command, value = zeile.split(self.separator)
-            if command not in commandlis:
-                if not kopf:
-                    # Berechnung des Zahlungsprozesses
-                    if comlis.get('Jahr') is None and len(comlis) > 1:
-                        raise BaseException('Fehler: Jahr muss immer gegeben sein!')
-                    elif comlis.get('1. Rate') is None and len(comlis) > 1:
-                        raise BaseException('Fehler: Betrag oder 1. Rate muss immer gegeben sein!')
-                    elif comlis.get('Inflation') is None and len(comlis) > 1:
-                        raise BaseException('Fehler: Inflation muss immer gegeben sein!')
-                    elif comlis.get('Gesamtlaufzeit') is None and len(comlis) > 1:
-                        raise BaseException('Fehler: Gesamtlaufzeit muss immer gegeben sein!')
-                    erg = self.reihe(comlis)
-                    teilkap.append(erg)
-                    # Parameter zurücksetzen
-                    comlis = {'Inflation': comlis['Inflation'], 'Gesamtlaufzeit': comlis['Gesamtlaufzeit']}
-                    kopf = True
-            else:
-                kopf = False
-            if command in commandbas + commandlis:
-                comlis[command] = value.replace(',', '.')
-                print(f'{command=}, {value=}')
-        # print(f'{comlis=}')
-        erg = self.reihe(comlis)
-        teilkap.append(erg)
-        return teilkap
-
-class Buffer():
-    """Verwaltet Teilzahlungen und Barwertliste"""
-    def __init__(self):
-        """Aufgabebuffer und internen Clipboardbuffer initialisiseren"""
-        self.clipboard = ''     # enthält zuletzt übernommenes Clipboard
-        self.separator = '\t'
-        self.commands = []
-
     def update(self):
-        """Prüft Stand des internen Clipboards und übernimmt bei Änderung den neuen Stand"""
-        clipnew = form.clipboard_get()
-        if any(clipnew.startswith(t) for t in ['Allgemeine', 'Inflation', 'Gesamtlaufzeit']):
-            # Testen auf Seperator 
-            # if clipnew.count(';') > clipnew.count('\t'):
-                # self.separator = ';'
-            self.clipboard = clipnew
-            self.commands = clipnew.split('\n')
-        return self.commands
+        """Liest Clipboard"""
+        clipboard = form.clipboard_get()
 
+        # Initialisierung
+        kap: float = 0.                 # Barwert für alle Teilkostenreihen
+        teilkap:List[float] = []        # Liste der Barwerte der Teilkostenreihen
+        titles:List[str] = []
+        comlis:dict[str, str] = {}      # Parameter der Teilkostenreihe 
+        header = None                   # Merker, dass nächste zu verarbeitende Zeile Spaltenbezeichnungen enthält
+        commonpart = True               # Merker, dass noch Allgemeine Parameter gelesen werden müssen.
+
+        lines = clipboard.split('\n')
+        for line in lines:
+            if header is None:
+                # Einlesen der Spaltenbezeichnungen für Allgemeine Parameter sowie Kostenreihen
+                header = line.split('\t')
+                # Leerzeilen überspringen
+                if not any([titel in commandbas + commandlis for titel in header]):
+                    header = None
+            elif commonpart:
+                # Einlesen der Allgemeinen Parameter
+                vals = line.split('\t')
+                comlis = {key: val for key, val in zip(header, vals) if key in commandbas}
+                # Merker setzen zur Verarbeitung der Teilkostenreihen
+                commonpart = False
+                header = None
+            else:
+                # Einlesen der Kostenreihen. Anschließend Teilberechnungen
+                if line.replace('\t', '').strip() == '':
+                    continue
+                vals = line.split('\t')
+                comlis |= {key: val for key, val in zip(header, vals) if key in commandbas + commandlis and val.strip() != ''}
+                title = '\t'.join([val for key, val in zip(header, vals) if key not in commandbas + commandlis])
+
+                # Berechnung des Barwertes für Teilkostenreihe
+                erg = self.reihe(comlis)
+                args = '\n'.join([f'{key}: {comlis[key]}' for key in comlis])
+                fw.write(f'{title}\n{args}\nTeilbarwert: {erg}\n\n')
+                titles.append(title)
+                teilkap.append(erg)
+                
+                # Vorbereitung für nächste Kostenreihe: Parameter auf allgemeine Parameter zurücksetzen
+                comlis = {'Abzinsung': comlis['Abzinsung'], 'Gesamtlaufzeit': comlis['Gesamtlaufzeit']}
+        if 'erg' not in vars():
+            return 0, [0], ['Fehler: Kopierte Daten konnten nicht verarbeitet werden!']
+        return erg, teilkap, titles
+                
 def calc_barwert():
-    commands = buf.update()
-    kvr.separator = buf.separator
-    teilkap = kvr.calc(commands)
+    erg, teilkap, titles = kvr.update() 
     kap = sum(teilkap)
-    clipboard = f'Barwert:\t{kap:.2f}'.replace('.', ',')
     form.clipboard_clear()
+    clipboard = f'Barwert:\t{kap:.2f}'.replace('.', ',')
     form.clipboard_append(clipboard)
-    textline.config(text = 'Übernehmen Sie nun den Barwert aus der Zwischenablage ...')
+    textline.config(text = 'Berechnung des Barwertes ...')
+
+    form.destroy()
 
 def calc_einzelbarwerte():
-    commands = buf.update()
-    kvr.separator = buf.separator
-    teilkap = kvr.calc(commands)
-    clipboard = '\n'.join([f'Barwert:\t{kap:.2f}'.replace('.', ',') for kap in teilkap])
+    erg, teilkap, titles = kvr.update()
+    kap = sum(teilkap)
     form.clipboard_clear()
+    clipboard = '\n'.join([f'{title}:\t{kap:.2f}'.replace('.', ',') for title, kap in zip(titles, teilkap)])
+
+    n = len(titles[0].split('\t'))
+    title = '\t'*(n-1) + 'Barwert'
+    clipboard += f'\n\n{title}:\t{kap:.2f}'.replace('.', ',')
     form.clipboard_append(clipboard)
-    textline.config(text = 'Übernehmen Sie nun die Einzelbarwerte aus der Zwischenablage ...')
+    textline.config(text = 'Berechnung der Einzelbarwerte ...')
 
-kvr = KVR()
-buf = Buffer()
+    form.destroy()
 
-form = tkinter.Tk()
-form.title('KVR-Leitlinien: Berechnung des Barwertes')
-form.geometry('600x175')
-textline = tkinter.Label(
-    form, text='Kopieren Sie zuerst die Teilzahlungsvorgänge aus der Excel-Datei ...',
-    fg =    'Blue',
-    font =  'lucida 12',
-)
-textline.pack(pady=10)
+dir = os.environ['HOMEPATH']
+drive = os.environ['HOMEDRIVE']
+filenam = os.path.join(drive, dir, 'Documents/kvr.txt')
+with open(filenam, 'w') as fw:
 
-bu_barwert = tkinter.Button(
-    form, 
-    text=   'Berechneten Barwert in Zwischenablage übernehmen', 
-    fg =    'Black',
-    font =  'lucida 12',
-    width = 50,
-    command=calc_barwert,
-)
-bu_barwert.pack(pady=10)
-bu_barwertliste = tkinter.Button(
-    form,
-    text=   'Berechnete Einzelbarwerte in Zwischenablage übernehmen', 
-    fg =    'Black',
-    font =  'lucida 12',
-    width = 50,
-    command=calc_einzelbarwerte,
-)
-bu_barwertliste.pack(pady=10)
+    kvr = KVR(fw)
 
-form.mainloop()
+    form = tkinter.Tk()
+    form.title('KVR-Leitlinien: Berechnung des Barwertes')
+    form.geometry('600x200')
+
+    textline = tkinter.Label(
+        form,
+        text='     Kopieren Sie zuerst die Teilzahlungsvorgänge aus der Excel-Datei ...\n',
+        anchor="w",
+        justify="left",
+        fg =    'Blue',
+        font =  'lucida 12',
+        height = 2,
+        width = 70,
+    )
+    textline.pack(pady=10)
+
+    # bu_barwert = tkinter.Button(
+        # form, 
+        # text=   'Barwert berechnen und in Zwischenablage übernehmen', 
+        # fg =    'Black',
+        # font =  'lucida 12',
+        # width = 50,
+        # command=calc_barwert,
+    # )
+    # bu_barwert.pack(pady=10)
+
+    bu_barwertliste = tkinter.Button(
+        form,
+        text=   'Barwerte berechnen und in Zwischenablage übernehmen', 
+        fg =    'Black',
+        font =  'lucida 12',
+        height = 1,
+        width = 50,
+        command=calc_einzelbarwerte,
+    )
+    bu_barwertliste.pack(pady=10)
+
+    textline = tkinter.Label(
+        form,
+        text='     Ergebnis in Datei: Dokumente\\kvr.txt',
+        anchor="w",
+        justify="left",
+        fg =    'Blue',
+        font =  'lucida 12',
+        height = 2,
+        width = 70,
+    )
+    textline.pack(pady=10)
+
+    form.bind('<Escape>', lambda e, w=form: form.destroy())
+
+    form.mainloop()
+
+del fw
