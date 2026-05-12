@@ -126,9 +126,9 @@ def calc_barwert():
     form.clipboard_clear()
     clipboard = f'Barwert:\t{kap:.2f}'.replace('.', ',')
     form.clipboard_append(clipboard)
-    textline.config(text = 'Berechnung des Barwertes ...')
-
-    form.destroy()
+    textline.config(text = '     Ergebnis in Datei: Dokumente\\kvr.txt')
+    # form.update()
+    # exit()
 
 def calc_einzelbarwerte():
     erg, teilkap, titles = kvr.update()
@@ -140,9 +140,14 @@ def calc_einzelbarwerte():
     title = '\t'*(n-1) + 'Barwert'
     clipboard += f'\n\n{title}:\t{kap:.2f}'.replace('.', ',')
     form.clipboard_append(clipboard)
-    textline.config(text = 'Berechnung der Einzelbarwerte ...')
+    textline.config(text = '     Ergebnis in Datei: Dokumente\\kvr.txt')
+    # form.update()
+    # exit()
 
+def ende(e):
+    form.update()
     form.destroy()
+    # exit()
 
 dir = os.environ['HOMEPATH']
 drive = os.environ['HOMEDRIVE']
@@ -153,7 +158,7 @@ with open(filenam, 'w') as fw:
 
     form = tkinter.Tk()
     form.title('KVR-Leitlinien: Berechnung des Barwertes')
-    form.geometry('600x200')
+    form.geometry('600x150')
 
     textline = tkinter.Label(
         form,
@@ -188,19 +193,7 @@ with open(filenam, 'w') as fw:
     )
     bu_barwertliste.pack(pady=10)
 
-    textline = tkinter.Label(
-        form,
-        text='     Ergebnis in Datei: Dokumente\\kvr.txt',
-        anchor="w",
-        justify="left",
-        fg =    'Blue',
-        font =  'lucida 12',
-        height = 2,
-        width = 70,
-    )
-    textline.pack(pady=10)
-
-    form.bind('<Escape>', lambda e, w=form: form.destroy())
+    form.bind('<Escape>', ende)
 
     form.mainloop()
 
